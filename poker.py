@@ -3,11 +3,13 @@ import random
 import copy
 
 class Game_instance:
-    def __init__(self, num_players):
+    def __init__(self, num_players, small, big):
         self.num_players = num_players
         self.player_instances = []
         self.deck = new_deck
         self.update_deck = new_deck
+        self.big_blind_amount = big
+        self.small_blind_amount = small
         self.head = None
         self.cards_public = None
         self.cards_private = None
@@ -18,9 +20,35 @@ class Game_instance:
             self.player_instances.append(player)
             
     def play_game(self):
+        self.create_game_order()
+        self.post_blinds()
         self.deal_cards()
         
+        
+        
 
+    def create_game_order(self):
+        # Game order created with linked list indicating "button", "small blind", and "big blind"
+        self.head = self.player_instances[0]
+        
+        for i in range(0, self.num_players - 1):
+            self.player_instances[i].next = self.player_instances[i+1]
+            #print(self.player_instances[i].next.name)
+    
+        self.player_instances[-1].next = self.player_instances[0]
+        self.small_blind = self.head.next
+        self.big_blind = self.head.next.next
+    
+        #print(self.player_instances[-1].next.name)
+        #print(self.small_blind.name, self.big_blind.name)
+
+    def post_blinds(self):
+        self.small_blind.money -= self.small_blind_amount
+        self.big_blind.money -= self.big_blind_amount
+        if self.big_blind.money < 0: self.big_blind.money = 0
+        if self.small_blind.money < 0: self.small_blind.money = 0
+        
+        # print(self.big_blind.name, self.big_blind.money)
 
     def deal_cards(self):
         for player in self.player_instances:
@@ -53,8 +81,7 @@ class Player_instance:
         self.card1 = None
         self.card2 = None
         self.public_hand = None
-
-        
-esp = Game_instance(6)
+   
+esp = Game_instance(6,2,4)
 esp.create_game()
 esp.play_game()
