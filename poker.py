@@ -35,12 +35,11 @@ class Game_instance:
     def create_game(self):
         # Create a player instance for each
         for x in range(self.num_players):
-            player = Player_instance(self.player_names[x], 200)
+            player = Player_instance(self.player_names[x], 200, self)
             self.player_instances.append(player)
 
     def play_game(self):
         #Running functions to play game
-        
         self.create_game_order()
         self.post_blinds()
         print("Dealing cards to players:\n ")
@@ -62,19 +61,15 @@ class Game_instance:
         while True:                                              # While the last acting player 
             if self.everyone_folded():
                 break
-            
             if self.priority.has_bet and (self.priority.bet_this_round == self.player_priority_action):
                 break
-
             elif self.priority.fold:
                 self.priority = self.priority.next
                 continue
-
             elif self.priority.all_in:
                 self.priority.has_bet = True
                 self.priority = self.priority.next
                 continue
-
             else:
                 bet_time = self.priority.game_action_player(self.player_priority_action)
                 self.process_action(bet_time)
@@ -189,13 +184,13 @@ class Game_instance:
             self.deal_river()
         
     def print_cards(self, card):
-        if card[0] == 'clubs':
+        if card[0] == 'c':
             return card[1], '\u2663'
-        if card[0] == 'diamonds':
+        if card[0] == 'd':
             return card[1], '\u2666'
-        if card[0] == 'spades':
+        if card[0] == 's':
             return card[1], '\u2660'
-        if card[0] == 'hearts':
+        if card[0] == 'h':
             return card[1], '\u2665'
     
     def everyone_folded(self):
@@ -233,17 +228,22 @@ class Game_instance:
     def print_pay_out(self):
         for x in self.player_instances:
             if x.fold == False:
-                print(x.name, x.total_bet)
+                print(self.print_cards(x.card1), self.print_cards(x.card2), x.name, x.total_bet)
             else:
-                print("Folded:", x.name, x.total_bet) 
+                print(self.print_cards(x.card1), self.print_cards(x.card2), x.name, x.total_bet, "     Folded:" ) 
 
-class Player_instance:
-    def __init__(self, name, money):
+class Player_instance(Game_instance):
+    def __init__(self, name, money, game_instance):
+        self.game_instance = game_instance
         self.name = name
         self.money = money
         self.next = None
         self.card1 = None
         self.card2 = None
+        self.straight_bit_mask = 0b0000000000000
+        self.pairs_dict = {'2':0, '3':0, '4':0, '5':0, '6':0, '7':0, '8':0, '9':0, '10':0, 'J':0, 'Q':0, 'K':0, 'A':0 }
+        self.suit_dict = {'h':0, 'c':0, 's':0, 'd':0}
+        self.highest_rank_card = None
 
         self.bet_this_round = 0
         self.total_bet = 0
@@ -254,7 +254,7 @@ class Player_instance:
 
     def game_action_player(self, action):
         # Decide what to do, currently random game actions
-        
+        print(self.pair_probability([self.card1, self.card2, *self.game_instance.cards_public]))
         self.has_bet = True
         if self.all_in:                                 # Shouldn't be necessary
             self.bet_this_round = action                 # To break the for loop, sloppy
@@ -316,6 +316,68 @@ class Player_instance:
         self.total_bet += amount
         return amount
 
+    def organize_ev_self(self, cards):
+        ranks = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A']
+        for card in cards:
+            self.suit_dict[card[0]] += 1                # Suit
+            self.pairs_dict[card[1]] += 1               # Rank
+            if highest_rank_card is None or ranks.index(card[1]) > ranks.index(highest_rank_card[1]):
+                highest_rank_card = card
+
+            rank_index = ranks.index(card[1])
+            bit_mask = 1 << rank_index
+            self.straight_bit_mask |= bit_mask
+
+        print(self.straight_bit_mask)
+    
+    def find_best_hand(self, cards):
+        pass
+
+    def straight_or_flush(cards):
+        pass
+
+    def find_pairs_triplets_fulls_quads(cards):
+        quad = []
+        pairs = []
+        triplets = []
+        singles = []
+        for key, val in cards.items():
+            if val == 4:
+                quad.append(int(key))
+            elif val == 3:
+                triplets.append(int(key))
+            elif val == 2:
+                pairs.append(int(key))
+            elif val == 1:
+                singles.append(key)
+  
+        if len(quad) == 1:  # One quad
+            return [7, quad[0], None, "Quads", singles[::-1]]
+        elif len(triplets) == 2:  # Two triplets mean Full House
+            return [6, max(triplets), min(triplets), "Full House", None]
+        elif len(triplets) == 1 and len(pairs) > 0:  # One triplet and some pairs make Full House
+            return [6, triplets[0], max(pairs), "Full House", None]
+        elif len(triplets) == 1:  # Only one triplet means Three of a Kind
+            return [3, triplets[0], None, "Three of a Kind", singles[::-1]]
+        elif len(pairs) == 2:  # Two pairs
+            return [2, max(pairs), min(pairs), "Two Pairs", singles[::-1]]
+        elif len(pairs) == 1:  # One pair
+            return [1, pairs[0], None, "One Pair", singles[::-1]]
+        else:
+            highest_card = max(cards.keys())  # No special combination found, return High Card
+            return [0, highest_card, None, "High Card", singles[::-1]]
+
+    def pair_probability(self, cards):
+        unseen_cards = 52 - len(cards)
+        unseen_pairs = 0
+
+        for rank, count in self.pairs_dict.items():
+            unseen_pairs += (4 - count) * (3 - count)  
+            # Each unseen card could form a pair with each other unseen card of the same rank
+
+        probability = unseen_pairs / unseen_cards * (unseen_pairs - 1) / (unseen_cards - 1)
+        return probability
+    
 new_round = Game_instance(8, 2, 4)
 new_round.create_game()
 new_round.play_game()
