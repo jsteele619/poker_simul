@@ -11,7 +11,6 @@ class Game_instance:
     def __init__(self, num_players, small, big):
         self.num_players = num_players
         self.player_instances = []
-        self.deck = new_deck
         self.update_deck = new_deck
         
         self.big_blind_amount = big
@@ -24,6 +23,10 @@ class Game_instance:
         self.player_names = ['Alpha', 'Bravo', 'Chad', 'David', 'Eddie', 'Fred', 'George', 'Harry', 'Ian']
         self.stage_public = ['Pre', 'Flop', 'Turn', 'River', 'Show']
         self.which_stage = 0
+
+        self.winner = [-1]
+        self.multiple = []
+        self.multiple_true = False
     
         ## ACTIONS and MUTEABLES
         self.pot = 0
@@ -40,6 +43,7 @@ class Game_instance:
 
     def play_game(self):
         #Running functions to play game
+        self.update_deck = new_deck
         self.create_game_order()
         self.post_blinds()
         print("Dealing cards to players:\n ")
@@ -52,10 +56,12 @@ class Game_instance:
         self.stage()
         self.game_action()
         self.stage()
-        #print(self.print_cards(self.cards_public[0]), self.print_cards(self.cards_public[1]), self.print_cards(self.cards_public[2]), self.print_cards(self.cards_public[3]), self.print_cards(self.cards_public[4]))
+        print(self.print_cards(self.cards_public[0]), self.print_cards(self.cards_public[1]), self.print_cards(self.cards_public[2]), self.print_cards(self.cards_public[3]), self.print_cards(self.cards_public[4]))
+        self.find_best_hand()
         self.print_pay_out()
-        print(self.pot)
         self.which_stage = 0
+        
+        self.reset_priority()
 
     def game_action(self):
         while True:                                              # While the last acting player 
@@ -129,6 +135,7 @@ class Game_instance:
         #print("posted blinds: sb:", self.small_blind.bet_this_round, "bb:", self.big_blind.bet_this_round, self.get_pot())
 
     def deal_cards(self):
+        
         for player in self.player_instances:
             ## Dealing two cards to each player, and deleting them from available cards
             rand_card = random.choice(self.update_deck)
@@ -171,9 +178,9 @@ class Game_instance:
         self.player_priority = self.head
         self.player_priority_action = 0
 
-        for x in self.player_instances:
-            x.bet_this_round = 0
-            x.has_bet = False
+        for player in self.player_instances:
+            player.bet_this_round = 0
+            player.has_bet = False
 
     def stage(self):
         if self.which_stage == 1:               # Ready to see the flop
@@ -194,21 +201,21 @@ class Game_instance:
             return card[1], '\u2665'
     
     def everyone_folded(self):
-        y = 0
-        for x in self.player_instances:
-            if x.fold == False:
-                y += 1
-        if y>1:
+        num_folds = 0
+        for player in self.player_instances:
+            if player.fold == False:
+                num_folds += 1
+        if num_folds > 1:
             return False
         else:
             return True
         
     def everyone_all_in(self):
         y = 0
-        for x in self.player_instances:
-            if x.all_in == False:
+        for player in self.player_instances:
+            if player.all_in == False:
                 y += 1
-        if y>1:
+        if y > 1:
             return False
         else:
             return True
@@ -225,16 +232,45 @@ class Game_instance:
     def payout_pot(self, list):
         pass
 
+    def find_best_hand(self):
+        ranks_order = {'A': 14, 'K': 13, 'Q': 12, 'J': 11, '10': 10, '9': 9, '8': 8, '7': 7, '6': 6, '5': 5, '4': 4, '3': 3, '2': 2}
+
+        for player in self.player_instances:
+            if player.fold == True:
+                continue
+            else:
+                # Return object is [2, ['Q', '9'], 'Two Pairs', ['10', '8', '2']], list of lists. 
+                combo = player.find_winning_hand()              # Returned object of analyzed hand
+                if combo[0] > self.winner[0]:                                       
+                    self.winner = combo
+                elif combo[0] == self.winner[0]:                                    # If parts of the hand are equal
+                    if combo[1][0] > self.winner[1][0]:
+                        self.winner = combo
+                    elif combo[1][0] == self.winner[1][0]:
+                        if combo[1][1] > self.winner[1][1]:
+                            self.winner = combo
+                        elif combo[1][1] == self.winner[1][1]:
+                            if (combo[3] == None) and (self.winner[3] == None):
+                                self.multiple_true = True
+                                self.multiple.append(combo)
+                                break
+                            self.multiple_true = True
+                            self.multiple.append(combo)
+
     def print_pay_out(self):
         for x in self.player_instances:
+            hand_analysis = x.find_winning_hand()
             if x.fold == False:
-                print(self.print_cards(x.card1), self.print_cards(x.card2), x.name, x.total_bet)
+                if self.winner[4] == x.name:
+                    print(self.print_cards(x.card1), self.print_cards(x.card2), x.name, x.total_bet, "   Winner", hand_analysis)
+                else:
+                    print(self.print_cards(x.card1), self.print_cards(x.card2), x.name, x.total_bet, hand_analysis)
             else:
-                print(self.print_cards(x.card1), self.print_cards(x.card2), x.name, x.total_bet, "     Folded:" ) 
+                print(self.print_cards(x.card1), self.print_cards(x.card2), x.name, x.total_bet, "     Folded:", hand_analysis ) 
 
 class Player_instance(Game_instance):
     def __init__(self, name, money, game_instance):
-        self.game_instance = game_instance
+        self.game_instance = game_instance                                      # Initializing the class instance
         self.name = name
         self.money = money
         self.next = None
@@ -243,8 +279,7 @@ class Player_instance(Game_instance):
         self.straight_bit_mask = 0b0000000000000
         self.pairs_dict = {'2':0, '3':0, '4':0, '5':0, '6':0, '7':0, '8':0, '9':0, '10':0, 'J':0, 'Q':0, 'K':0, 'A':0 }
         self.suit_dict = {'h':0, 'c':0, 's':0, 'd':0}
-        self.highest_rank_card = None
-
+        self.ranks = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A']
         self.bet_this_round = 0
         self.total_bet = 0
         self.has_bet = False
@@ -254,7 +289,10 @@ class Player_instance(Game_instance):
 
     def game_action_player(self, action):
         # Decide what to do, currently random game actions
-        print(self.pair_probability([self.card1, self.card2, *self.game_instance.cards_public]))
+        #print(self.pair_probability([self.card1, self.card2, *self.game_instance.cards_public]))
+        #self.organize_ev_self([self.card1, self.card2, *self.game_instance.cards_public])
+        print(self.print_cards(self.card1), self.print_cards(self.card2))
+        #print(self.find_winning_hand())
         self.has_bet = True
         if self.all_in:                                 # Shouldn't be necessary
             self.bet_this_round = action                 # To break the for loop, sloppy
@@ -280,7 +318,7 @@ class Player_instance(Game_instance):
                 return ['fold', 0] 
         
         elif action > self.bet_this_round:              # If the raise is more than you have bet this round
-            x = random.randint(1, 3)
+            x = random.randint(2, 3)
             if x == 0:                                  # Still strange
                 self.all_in = True
                 val = self.place_bet(self.money)
@@ -317,55 +355,89 @@ class Player_instance(Game_instance):
         return amount
 
     def organize_ev_self(self, cards):
-        ranks = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A']
         for card in cards:
             self.suit_dict[card[0]] += 1                # Suit
             self.pairs_dict[card[1]] += 1               # Rank
-            if highest_rank_card is None or ranks.index(card[1]) > ranks.index(highest_rank_card[1]):
-                highest_rank_card = card
 
-            rank_index = ranks.index(card[1])
+            rank_index = self.ranks.index(card[1])
             bit_mask = 1 << rank_index
             self.straight_bit_mask |= bit_mask
-
-        print(self.straight_bit_mask)
     
-    def find_best_hand(self, cards):
-        pass
+    def straight_flush(self, cards):
+        return None 
 
-    def straight_or_flush(cards):
-        pass
+    def flush(self):
+        # Check if any suit has 5 cards, indicating a flush
+        flush_suit = None
+        card_list = []
+        for suit, count in self.suit_dict.items():
+            if count == 5:
+                flush_suit = suit
+                break  # No need to check other suits if a flush is found
+        if flush_suit:
+            new_list = [self.card1, self.card2, *self.game_instance.cards_public]
+            for card in new_list:
+                if card[0] == flush_suit:
+                    card_list.append(card[1])
+            print(card_list)
+            return [5, [card_list , 0], "Flush", card_list, self.name]  # Return the ranks of the cards forming the flush
 
-    def find_pairs_triplets_fulls_quads(cards):
+        return None  # No flush found
+        
+    def straight(self):
+        # Check for consecutive ones using a sliding window
+        bitmask = 0b11111
+        for i in range(9):
+            window = self.straight_bit_mask >> i  # Shift the bits to create a window of 5 bits
+            if window & bitmask == bitmask: # Found 5 consecutive ones
+                left_rank_index = i  # Index of the leftmost bit in the sequence
+                leftmost_rank = self.ranks[left_rank_index + 4]  # Rank corresponding to the leftmost bit
+                return [4, [leftmost_rank, 0], "Straight", [], self.name]
+
+    def find_winning_hand(self):
+        self.organize_ev_self([self.card1, self.card2, *self.game_instance.cards_public])
         quad = []
         pairs = []
         triplets = []
         singles = []
-        for key, val in cards.items():
+        for key, val in self.pairs_dict.items():
             if val == 4:
-                quad.append(int(key))
+                quad.append(key)
             elif val == 3:
-                triplets.append(int(key))
+                triplets.append(key)
             elif val == 2:
-                pairs.append(int(key))
+                pairs.append(key)
             elif val == 1:
                 singles.append(key)
-  
+
+        # Reset the dict, Can this be moved?
+        self.pairs_dict = {'2':0, '3':0, '4':0, '5':0, '6':0, '7':0, '8':0, '9':0, '10':0, 'J':0, 'Q':0, 'K':0, 'A':0 }
+
+        #straight_flush_info = self.straight_flush()
+        straight_info = self.straight()
+        flush_info = self.flush()
+        #print(singles[::-1])       # String of ['A', '8', '5', '4', '2']
+        #if straight_flush_info is not None:
+        #    return straight_flush_info
         if len(quad) == 1:  # One quad
-            return [7, quad[0], None, "Quads", singles[::-1]]
+            return [7, [quad[0], 0], "Quads", singles[::-1], self.name]
         elif len(triplets) == 2:  # Two triplets mean Full House
-            return [6, max(triplets), min(triplets), "Full House", None]
+            return [6, [max(triplets), min(triplets)], "Full House", [], self.name]
         elif len(triplets) == 1 and len(pairs) > 0:  # One triplet and some pairs make Full House
-            return [6, triplets[0], max(pairs), "Full House", None]
+            return [6, [triplets[0], max(pairs)], "Full House", [], self.name]
+        elif flush_info is not None:
+            return flush_info
+        elif straight_info is not None:
+            return straight_info
         elif len(triplets) == 1:  # Only one triplet means Three of a Kind
-            return [3, triplets[0], None, "Three of a Kind", singles[::-1]]
+            return [3, [triplets[0], 0], "Three of a Kind", singles[::-1], self.name]
         elif len(pairs) == 2:  # Two pairs
-            return [2, max(pairs), min(pairs), "Two Pairs", singles[::-1]]
+            return [2, [max(pairs), min(pairs)], "Two Pairs", singles[::-1], self.name]
         elif len(pairs) == 1:  # One pair
-            return [1, pairs[0], None, "One Pair", singles[::-1]]
+            return [1, [pairs[0], 0], "One Pair", singles[::-1], self.name]
         else:
-            highest_card = max(cards.keys())  # No special combination found, return High Card
-            return [0, highest_card, None, "High Card", singles[::-1]]
+            highest_card = max(self.pairs_dict.keys())  # No special combination found, return High Card
+            return [0, [highest_card, 0], "High Card", singles[::-1], self.name]
 
     def pair_probability(self, cards):
         unseen_cards = 52 - len(cards)
@@ -378,6 +450,9 @@ class Player_instance(Game_instance):
         probability = unseen_pairs / unseen_cards * (unseen_pairs - 1) / (unseen_cards - 1)
         return probability
     
-new_round = Game_instance(8, 2, 4)
-new_round.create_game()
-new_round.play_game()
+
+for x in range(100):    
+    new_round = Game_instance(8, 2, 4)
+    new_round.create_game()
+    new_round.play_game()
+    print(x)
