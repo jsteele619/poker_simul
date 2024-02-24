@@ -1,4 +1,5 @@
 from deck import new_deck
+from ai_player import AI_player
 import random
 
 # POT
@@ -20,7 +21,7 @@ class Game_instance:
         self.big_blind = None                           # Player
         
         self.cards_public = []
-        self.player_names = ['Alpha', 'Bravo', 'Chad', 'David', 'Eddie', 'Fred', 'George', 'Harry', 'Ian']
+        self.player_names = ['Alpha', 'Bravo', 'Chad', 'David', 'Eddie', 'Fred', 'George']
         self.stage_public = ['Pre', 'Flop', 'Turn', 'River', 'Show']
         self.which_stage = 0
 
@@ -38,10 +39,12 @@ class Game_instance:
 
     def create_game(self):
         # Create a player instance for each and append them to list of players
-        for x in range(self.num_players):
+        for x in range(self.num_players -1 ):
             player = Player_instance(self.player_names[x], 200, self)                   
             self.player_instances.append(player)
-
+        ai_player = AI_player("Hero", 200, self)
+        self.player_instances.append(ai_player)
+        
     def play_game(self):
         #Running functions to play game
         self.create_game_order()
@@ -61,7 +64,6 @@ class Game_instance:
         self.print_pay_out()
         self.which_stage = 0
         
-        self.reset_priority()
         self.reset_deck()
 
     def game_action(self):
@@ -137,6 +139,25 @@ class Game_instance:
             player.bet_this_round = 0
             player.has_bet = False
 
+    def rotate_game_order(self):
+        self.head = self.head.next
+        
+        self.small_blind = self.head.next
+        self.big_blind = self.head.next.next
+        self.priority = self.head.next.next.next
+        self.player_priority = self.head.next.next   
+        
+    def define_position(self):
+        self.small_blind.position = 1
+        self.big_blind.position = 2
+        variable = self.big_blind.next
+        x = 3
+        
+        while variable != self.small_blind:
+            variable.position = x
+            x += 1
+            variable = variable.next
+
     def stage(self):
         if self.which_stage == 1:               # Ready to see the flop
             self.deal_flop()
@@ -145,7 +166,6 @@ class Game_instance:
         if self.which_stage == 3:
             self.deal_river()
         
-
     def post_blinds(self):
         # Correct setters to amount and pot
         self.small_blind.place_bet(self.small_blind_amount)
@@ -288,8 +308,10 @@ class Player_instance(Game_instance):
         self.game_instance = game_instance
         self.name = name
         self.money = money
+        self.buyins = 0 
                                    
         self.next = None
+        self.position = -1
         self.card1 = None
         self.card2 = None
         
@@ -349,15 +371,20 @@ class Player_instance(Game_instance):
             print('weird')
             return["fold", 0]
 
-    def range(self):
-        starting_hands = {
-            "10": []
-        }
+    def reset_player(self):
+        if self.money == 0:
+            self.money = 200
+            self.buyins += 1
         
-        pass
+        self.bet_this_round = 0
+        self.total_bet = 0
+        self.has_bet = False
+        
+        self.all_in = False
+        self.fold = False
 
     def position(self):
-        pass
+        return self.position
 
     def place_bet(self, amount):                        # Place the bet with impact on player side, process bet on game state side
         # Reason to place bet
@@ -380,6 +407,7 @@ class Player_instance(Game_instance):
     def receive_payout(self, amount):
         self.money += amount
         return self.money
+
 
 class Winning_hand:
     @staticmethod
@@ -538,11 +566,17 @@ class Probability:
             return probability
         return 0  
 
-for x in range(100):    
+
+def game_time():
     new_round = Game_instance(8, 2, 4)
     new_round.create_game()
-    new_round.play_game()
-    print(x)
+    for x in range(100):    
+        
+        new_round.play_game()
+        new_round.rotate_game_order()
+        new_round.define_position
+        new_round.reset_priority()
+        new_round.reset_pot
+        print(x)
 
-
-
+game_time()
