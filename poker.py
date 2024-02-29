@@ -52,11 +52,7 @@ class Game_instance:
         self.deal_river()
         self.game_action()
         print("\n", "Public Cards:", "\n", self.print_cards(self.cards_public[0]), self.print_cards(self.cards_public[1]), self.print_cards(self.cards_public[2]), self.print_cards(self.cards_public[3]), self.print_cards(self.cards_public[4]))
-        print()
-        self.find_best_hand()
-        self.print_pay_out()
-        self.payout_pot()
-        self.reset_deck()
+        self.end_of_game_action()
 
     def game_action(self):
         while True:                                              # While the last acting player 
@@ -104,6 +100,18 @@ class Game_instance:
             self.priority.bet_this_round = self.player_priority_action              # Sloppy
             print(self.priority.name, "is all-in")
 
+    def end_of_game_action(self):
+        self.find_best_hand()
+        self.print_pay_out()
+        self.payout_pot()
+        self.reset_deck()
+        for player in self.player_instances:
+            player.reset_player()
+        self.rotate_game_order()
+        self.reset_priority()
+        self.define_position()
+        self.which_stage = 0
+
     def create_game_order(self):
         # Game order created with linked list indicating positions "button", "small blind", and "big blind"
         # Needs work to rotate game order
@@ -126,9 +134,6 @@ class Game_instance:
         self.player_priority = self.head
         self.player_priority_action = 0
 
-        for player in self.player_instances:
-            player.reset_player()
-
     def rotate_game_order(self):
         self.head = self.head.next
         self.small_blind = self.head.next
@@ -145,7 +150,6 @@ class Game_instance:
         while variable != self.small_blind:
             variable.position = x
             x += 1
-            print(variable.name)
             variable = variable.next
             
     def post_blinds(self):
@@ -333,6 +337,7 @@ class AI_player(Game_instance):
         #self.organize_ev_self([self.card1, self.card2, *self.game_instance.cards_public])
 
         print(self.print_cards(self.card1), self.print_cards(self.card2))
+
         if self.game_instance.which_stage == 0:
             what_to_do = self.preflop_bet(action)
             print(what_to_do)
