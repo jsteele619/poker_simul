@@ -1,5 +1,6 @@
 from deck import new_deck
 import random
+import pandas as pd
 
 # POT
 # Betting
@@ -42,7 +43,7 @@ class Game_instance:
     def play_game(self):
         #Running functions to play game
         self.post_blinds()
-        print("Dealing cards to players:\n ", self.head.name)
+        print("Dealing cards to players:\n",)
         self.deal_cards()
         self.game_action()
         self.deal_flop()
@@ -64,7 +65,6 @@ class Game_instance:
                 self.priority = self.priority.next
                 continue
             elif self.priority.all_in:
-                self.priority.has_bet = True
                 self.priority = self.priority.next
                 continue
             else:
@@ -96,62 +96,78 @@ class Game_instance:
                                 
         if bet_time[0] == "all in":
             self.set_pot(bet_time[1])
-            self.player_priority_action = self.priority.total_bet
+            self.player_priority_action = self.priority.total_bet                   # Incorrect ?
             self.priority.bet_this_round = self.player_priority_action              # Sloppy
             print(self.priority.name, "is all-in")
 
     def end_of_game_action(self):
         self.find_best_hand()
         self.print_pay_out()
+        # Create AI adjustments
+
         self.payout_pot()
         self.reset_deck()
         for player in self.player_instances:
             player.reset_player()
         self.rotate_game_order()
-        self.reset_priority()
         self.define_position()
         self.which_stage = 0
 
     def create_game_order(self):
         # Game order created with linked list indicating positions "button", "small blind", and "big blind"
-        # Needs work to rotate game order
         self.head = self.player_instances[0]
         
         for i in range(0, self.num_players - 1):
             self.player_instances[i].next = self.player_instances[i+1]
-            #print(self.player_instances[i].next.name)
     
         self.player_instances[-1].next = self.player_instances[0]
         self.small_blind = self.head.next
         self.big_blind = self.head.next.next
         self.priority = self.head.next.next.next
         self.player_priority = self.head.next.next    
-        #print(self.player_instances[-1].next.name)
-        #print(self.small_blind.name, self.big_blind.name)
 
     def reset_priority(self):
         self.priority = self.head.next
         self.player_priority = self.head
         self.player_priority_action = 0
 
+        for player in self.player_instances:
+            player.bet_this_round = 0
+            player.has_bet = False
+
     def rotate_game_order(self):
         self.head = self.head.next
         self.small_blind = self.head.next
         self.big_blind = self.head.next.next
         self.priority = self.head.next.next.next
-        self.player_priority = self.head.next.next   
+        self.player_priority = self.head.next.next  
+        self.player_priority_action =self.big_blind_amount 
         
     def define_position(self):
         self.small_blind.position = 0
         self.big_blind.position = 1
         variable = self.big_blind.next
+        self.num_players_in_round = self.num_players
         x = 2
         
         while variable != self.small_blind:
             variable.position = x
             x += 1
             variable = variable.next
-            
+
+    def update_positions(self):
+        x = 0
+        variable = self.small_blind.next
+        while variable != self.small_blind:
+            if variable.fold:
+                variable = variable.next
+                continue
+            else: 
+                variable.position = x
+                x += 1
+                variable = variable.next
+        self.num_players_in_round = x
+
     def post_blinds(self):
         # Correct setters to amount and pot
         self.small_blind.place_bet(self.small_blind_amount)
@@ -159,10 +175,9 @@ class Game_instance:
         
         self.big_blind.place_bet(self.big_blind_amount)
         self.set_pot(self.big_blind_amount)
-        #print("posted blinds: sb:", self.small_blind.bet_this_round, "bb:", self.big_blind.bet_this_round, self.get_pot())
+        print("Posted blinds: Small:", self.small_blind.name, self.small_blind.bet_this_round, "Big:", self.big_blind.name, self.big_blind.bet_this_round, self.get_pot())
 
     def deal_cards(self):
-        
         for player in self.player_instances:
             ## Dealing two cards to each player, and deleting them from available cards
             rand_card = random.choice(self.update_deck)
@@ -239,7 +254,8 @@ class Game_instance:
 
     def payout_pot(self):
         pot = self.get_pot()
-        print("Name of Winner:", self.winner[0].name)
+        print("Name of Winner:", self.winner[0].name, " Amount:", pot)
+        print("\n")
         num_winners = len(self.winner)
         pot = pot // num_winners
 
@@ -300,17 +316,31 @@ class Game_instance:
     def print_pay_out(self):
         for player in self.player_instances:
             combo = Winning_hand.find_winning_hand([player.card1, player.card2, *self.cards_public])
-            if not player.fold:
-                if player in self.winner:
-                    print(self.print_cards(player.card1), self.print_cards(player.card2), player.name, player.total_bet, "   Winner", combo)
-                else:
-                    print(self.print_cards(player.card1), self.print_cards(player.card2), player.name, player.total_bet, combo)
-            #else:
-            #    print(self.print_cards(player.card1), self.print_cards(player.card2), player.name, player.total_bet, "     Folded:", combo)
+            if player in self.winner:
+                print(self.print_cards(player.card1), self.print_cards(player.card2), player.name, player.total_bet, "   Winner", combo)
+            elif player.fold:
+                print(self.print_cards(player.card1), self.print_cards(player.card2), player.name, "   Folded", player.total_bet, combo)
+            else:
+                print(self.print_cards(player.card1), self.print_cards(player.card2), player.name, "   Lost Showdown", player.total_bet, combo)
+        #else:
+        #    print(self.print_cards(player.card1), self.print_cards(player.card2), player.name, player.total_bet, "     Folded:", combo)
+
+    def create_pandas_df(self):
+        player_data = []
+        for player in self.player_instances:
+            player_info = {'Name': player.name}
+            player_data.append(player_info)
+            
+        df = pd.DataFrame(player_data).set_index('Name').T
+        return df
     
     def print_csv(self):
+        player_list = []
         for player in self.player_instances:
-            print(player.name, ": ", player.money - (200 * player.buyins))
+            #print(player.name, ": ", player.money - (200 * player.buyins))
+            player_list.append(player.money - (200 * player.buyins))
+        return player_list
+        
 
 class AI_player(Game_instance):
     def __init__(self, name, money, game_instance):
@@ -331,73 +361,92 @@ class AI_player(Game_instance):
         self.all_in = False
         self.fold = False
 
+        self.position_weight = 1
+        self.hand_strength = 1
+        self.probability_strength = 1
+        self.range_weight = 1
+        self.combo_weight = 1
+        self.action_weight = 1
+        self.pot_odds_weight = 1
+        self.random_val = .05
+
+        self.preflop_val_one = 5
+        self.preflop_val_two = 3
+        self.preflop_val_three = 1
+
+        self.postflop_val_one = 5
+        self.postflop_val_two = 3
+        self.postflop_val_three = 1
+
+
     def game_action_player(self, action):
-        # Decide what to do, currently random game actions
-        #print(self.pair_probability([self.card1, self.card2, *self.game_instance.cards_public]))
-        #self.organize_ev_self([self.card1, self.card2, *self.game_instance.cards_public])
-
-        print(self.print_cards(self.card1), self.print_cards(self.card2))
-
+        # Decide what to do
+        print("\n", self.print_cards(self.card1), self.print_cards(self.card2))
+        
         if self.game_instance.which_stage == 0:
-            what_to_do = self.preflop_bet(action)
-            print(what_to_do)
-            if what_to_do > 3:
-                val = self.place_bet(4 * self.game_instance.big_blind_amount)
-                return ["raise", val]
-            elif what_to_do > 2:
-                action = self.place_bet(action)
-                return ["call", action]
-            else:
-                self.fold = True
-                return ['fold', 0] 
-        
-        #self.pot_odds(action, [self.card1, self.card2, *self.game_instance.cards_public])
-        #print(self.find_winning_hand())
-        self.has_bet = True
-        val = self.place_bet(action)
-        return ["call", val]
-    
-        if self.all_in:                                 # Shouldn't be necessary
-            self.bet_this_round = action                 # To break the for loop, sloppy
-            return ["check", 0]
-        
-        elif action == self.bet_this_round:             # If the action is equal to your action this round
-            x = random.randint(2, 3)
-            if x == 3:
-                return ["check", 0]
-            if x == 2:
-                val = self.place_bet(20 + action)
-                return ["raise", val]
-            if x == 1 :                                  # Not Currently Accessible
-                return ['all in', 10]
-        
-        elif action >= self.money:                      # If the raise is more than your current money
-            x = random.randint(0, 1)
-            if x == 0:                              
-                val = self.place_bet(self.money)        # Call and All In
-                return ['all in', val]                   
-            else:
-                self.fold = True
-                return ['fold', 0] 
-        
-        elif action > self.bet_this_round:              # If the raise is more than you have bet this round
-            x = random.randint(2, 3)
-            if x == 0:                                  # Still strange
-                self.all_in = True
-                val = self.place_bet(self.money)
-                return ["all in", val] 
-            if x == 1: 
-                val = self.place_bet(20 + action - self.bet_this_round)
-                return ["raise", val]
-            if x == 2:
-                val = self.place_bet(action - self.bet_this_round) 
-                return ["call", val]
-            if x == 3:
-                self.fold = True 
-                return ["fold", 0]
+            return self.preflop_bet(action)
         else:
-            print('weird')
-            return["fold", 0]
+            return self.postflop_bet(action)
+        
+    def preflop_bet(self, action):
+        range_val = self.range()
+        position_index = self.position_index()
+
+        what_to_do = (int(range_val) * self.range_weight) + (position_index * self.position_weight) / 2
+        print("What it do", what_to_do, "Range Val:", range_val, "Position Val:", position_index)
+        self.has_bet = True
+        if what_to_do > self.preflop_val_one:
+            val = self.place_bet(4 * self.game_instance.big_blind_amount)
+            return ["raise", val]
+        elif what_to_do > self.preflop_val_two:
+            action = self.place_bet(action)
+            return ["call", action]
+        else:
+            self.fold = True
+            self.game_instance.update_positions()
+            return ['fold', 0]
+    
+    def postflop_bet(self, action):
+        pot_odds_val = self.pot_odds(action)
+        combo = Winning_hand.find_winning_hand([self.card1, self.card2, *self.game_instance.cards_public])
+        position = self.position_index()
+        range_val = self.range()
+        self.has_bet = True
+
+        what_to_do = (combo[0] * self.hand_strength) * (position * self.position_weight) * (pot_odds_val * self.pot_odds_weight) * (int(range_val)/10 * self.range_weight)
+        print(what_to_do)
+
+        if self.all_in:
+            return ["all-in", 0]
+
+        if action == self.bet_this_round:       # Checked to you    
+            if what_to_do > 2:
+                val = self.place_bet(self.game_instance.get_pot() * .7 * random.uniform(0.7, 1.3))      # Strong hand bet * .7 of pot * random
+                if self.all_in:
+                    return ["all in", val] 
+                return ["raise", val]
+            elif what_to_do > 1:
+                val = self.place_bet(self.game_instance.get_pot() * .4 * random.uniform(0.7, 1.1))      # Medium hand bet * .4 of pot * random
+                if self.all_in:
+                    return ["all in", val] 
+                return ["raise, val"]
+            elif what_to_do < 1:
+                return ["check", 0]
+        
+        elif action > self.bet_this_round:
+            if what_to_do > 2:
+                val = self.place_bet(self.game_instance.get_pot() * .7 * random.uniform(0.7, 1.3))
+                if self.all_in:
+                    return ["all in", val]      
+                return ["raise", val]
+            elif what_to_do > 1:
+                val = self.place_bet(action)  
+                if self.all_in:
+                    return ["all in", val]    
+                return ["call", val]
+            elif what_to_do < 1:
+                self.fold = True
+                return ["fold", 0]
 
     def range(self):
         starting_hands = {
@@ -419,18 +468,7 @@ class AI_player(Game_instance):
             if {self.card1[1], self.card2[1]} in hands:
                 return rank
 
-    def preflop_bet(self, action):
-        range_val = self.range()
-        position_index = self.position_index()
-        if action == 0:
-            bet_value = 1 
-        else: 
-            bet_value = self.bet_this_round/action
-
-        print("range val:", int(range_val), "position:", position_index, "bet value:", bet_value)
-        return(int(range_val) * position_index)
-        
-    def pot_odds(self, action, cards):
+    def pot_odds23(self, action, cards):
         pot = self.game_instance.get_pot()
         flush_prob = Probability.flush_probability(cards)
         pair_prob = Probability.two_pair_probability(cards)
@@ -441,8 +479,14 @@ class AI_player(Game_instance):
         #print(flush_prob, pair_prob, triplet_prob, quad, full_house)
 
     def position_index(self):
-        print("position", self.position, "num_player", self.game_instance.num_players)
-        return self.position/self.game_instance.num_players
+        # print("position", self.position, "num_player", self.game_instance.num_players_in_round)
+        return (self.position/self.game_instance.num_players_in_round) * 10
+
+    def pot_odds(self, action):
+        # Pot size if bet called
+        percentage = (action / self.game_instance.get_pot() + action)
+        print("Pot Odds: ", percentage)
+        return percentage
 
     def place_bet(self, amount):                        # Place the bet with impact on player side, process bet on game state side
         # Reason to place bet
@@ -519,6 +563,89 @@ class Player_instance(Game_instance):
         self.all_in = False
         self.fold = False
 
+        self.position_weight = 1
+        self.hand_strength = 1
+        self.probability_strength = 1
+        self.range_weight = 1
+        self.combo_weight = 1
+        self.action_weight = 1
+        self.pot_odds_weight = 1
+        self.random_val = .05
+
+    def game_action_player(self, action):
+        # Decide what to do
+        print(self.print_cards(self.card1), self.print_cards(self.card2))
+        
+        if self.game_instance.which_stage == 0:
+            return self.preflop_bet(action)
+        else:
+            return self.postflop_bet(action)
+        
+    def pot_odds(self, action):
+        # Pot size if bet called
+        percentage = (action / self.game_instance.get_pot() + action)
+        return percentage
+
+    def preflop_bet(self, action):
+        range_val = self.range()
+        position_index = self.position_index()
+        pot_odds_val = self.pot_odds(action)
+
+        what_to_do = (int(range_val)/9 * self.range_weight) * (self.position_index() * self.position_weight)
+        self.has_bet = True
+        if what_to_do > .5:
+            val = self.place_bet(4 * self.game_instance.big_blind_amount)
+            return ["raise", val]
+        elif what_to_do > .3:
+            action = self.place_bet(action)
+            return ["call", action]
+        else:
+            self.fold = True
+            self.game_instance.update_positions()
+            return ['fold', 0]
+    
+    def postflop_bet(self, action):
+        pot_odds_val = self.pot_odds(action)
+        combo = Winning_hand.find_winning_hand([self.card1, self.card2, *self.game_instance.cards_public])
+        position = self.position_index()
+        range_val = self.range()
+        self.has_bet = True
+
+        what_to_do = (combo[0] * self.hand_strength) * (position * self.position_weight) * (pot_odds_val * self.pot_odds_weight) * (int(range_val)/10 * self.range_weight)
+
+        if self.all_in:
+            return ["all-in", 0]
+
+        if action == self.bet_this_round:       # Checked to you    
+            if what_to_do > 2:
+                val = self.place_bet(self.game_instance.get_pot() * .7 * random.uniform(0.7, 1.3))      # Strong hand bet * .7 of pot * random
+                if self.all_in:
+                    return ["all in", val] 
+                return ["raise", val]
+            elif what_to_do > 1:
+                val = self.place_bet(self.game_instance.get_pot() * .4 * random.uniform(0.7, 1.1))      # Medium hand bet * .4 of pot * random
+                if self.all_in:
+                    return ["all in", val] 
+                return ["raise, val"]
+            elif what_to_do < 1:
+                return ["check", 0]
+        
+        elif action > self.bet_this_round:
+            if what_to_do > 2:
+                val = self.place_bet(self.game_instance.get_pot() * .7 * random.uniform(0.7, 1.3))
+                if self.all_in:
+                    return ["all in", val]      
+                return ["raise", val]
+            elif what_to_do > 1:
+                val = self.place_bet(action)  
+                if self.all_in:
+                    return ["all in", val]    
+                return ["call", val]
+            elif what_to_do < 1:
+                self.fold = True
+                return ["fold", 0]
+
+
     def range(self):
         starting_hands = {
             "10": [{"A", "A"}, {"A", "K"}, {"K", "K"}, {"Q", "Q"}],
@@ -539,97 +666,18 @@ class Player_instance(Game_instance):
             if {self.card1[1], self.card2[1]} in hands:
                 return rank
 
-    def game_action_player(self, action):
-        # Decide what to do, currently random game actions
-        #print(self.pair_probability([self.card1, self.card2, *self.game_instance.cards_public]))
-        #self.organize_ev_self([self.card1, self.card2, *self.game_instance.cards_public])
-        print(self.print_cards(self.card1), self.print_cards(self.card2))
-        #print(self.find_winning_hand())
-        if self.game_instance.which_stage == 0:
-            what_to_do = self.preflop_bet(action)
-            self.has_bet = True
-            if what_to_do > 6:
-                val = self.place_bet(4 * self.game_instance.big_blind_amount)
-                return ["raise", val]
-            elif what_to_do > 4:
-                val = self.place_bet(action)
-                return ["call", action]
-            else:
-                self.fold = True
-                return ['fold', 0] 
-        
+    def pot_odds23(self, action, cards):
+        pot = self.game_instance.get_pot()
+        flush_prob = Probability.flush_probability(cards)
+        pair_prob = Probability.two_pair_probability(cards)
+        triplet_prob = Probability.three_probability_given_pair(cards)
+        quad = Probability.four_probability_given_three(cards)
+        full_house = Probability.full_house_probability(cards)
 
-        self.has_bet = True
-        val = self.place_bet(action)
-        return ["call", val]
+        #print(flush_prob, pair_prob, triplet_prob, quad, full_house)
 
-
-        if self.all_in:                                 # Shouldn't be necessary
-            self.bet_this_round = action                 # To break the for loop, sloppy
-            return ["check", 0]
-        
-        elif action == self.bet_this_round:             # If the action is equal to your action this round
-            x = random.randint(2, 3)
-            if x == 3:
-                return ["check", 0]
-            if x == 2:
-                val = self.place_bet(20 + action)
-                return ["raise", val]
-            if x == 1 :                                  # Not Currently Accessible
-                return ['all in', 10]
-        
-        elif action >= self.money:                      # If the raise is more than your current money
-            x = random.randint(0, 1)
-            if x == 0:                              
-                val = self.place_bet(self.money)        # Call and All In
-                return ['all in', val]                   
-            else:
-                self.fold = True
-                return ['fold', 0] 
-        
-        elif action > self.bet_this_round:              # If the raise is more than you have bet this round
-            x = random.randint(2, 3)
-            if x == 0:                                  # Still strange
-                self.all_in = True
-                val = self.place_bet(self.money)
-                return ["all in", val] 
-            if x == 1: 
-                val = self.place_bet(20 + action - self.bet_this_round)
-                return ["raise", val]
-            if x == 2:
-                val = self.place_bet(action - self.bet_this_round) 
-                return ["call", val]
-            if x == 3:
-                self.fold = True 
-                return ["fold", 0]
-        else:
-            print('weird')
-            return["fold", 0]
-
-    def reset_player(self):
-        if self.money == 0:
-            self.money = 200
-            self.buyins += 1
-        
-        self.bet_this_round = 0
-        self.total_bet = 0
-        self.has_bet = False
-        
-        self.all_in = False
-        self.fold = False
-
-    def position(self):
-        return self.position
-
-    def preflop_bet(self, action):
-        range_val = self.range()
-        if action == 0:
-            bet_value = 1 
-        else: 
-            bet_value = self.bet_this_round/action
-
-        #print("range val:", int(range_val), "position:", position_index, "bet value:", bet_value)
-        return(int(range_val))
+    def position_index(self):
+        return self.position/self.game_instance.num_players_in_round
 
     def place_bet(self, amount):                        # Place the bet with impact on player side, process bet on game state side
         # Reason to place bet
@@ -643,7 +691,7 @@ class Player_instance(Game_instance):
     def get_money(self):
         return self.money
 
-    def set_money(self, amount):            # Needs work
+    def set_money(self, amount):           
         self.money -= amount   
         self.bet_this_round += amount
         self.total_bet += amount
@@ -652,6 +700,18 @@ class Player_instance(Game_instance):
     def receive_payout(self, amount):
         self.money += amount
         return self.money
+
+    def reset_player(self):
+        if self.money == 0:
+            self.money = 200
+            self.buyins += 1
+        
+        self.bet_this_round = 0
+        self.total_bet = 0
+        self.has_bet = False
+        
+        self.all_in = False
+        self.fold = False
 
 class Winning_hand:
     @staticmethod
