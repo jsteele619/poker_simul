@@ -8,8 +8,12 @@ def game_time():
     new_round.define_position()
     df = new_round.create_pandas_df()
     for x in range(10):    
-        new_round.play_game()
+        for y in range(10):
+            new_round.play_game()
+            print(x,y)
+        player_list = new_round.append_df()
+        df.loc[(len(df))] = player_list
     print(df)
-    player_list = new_round.print_csv()
+    new_round.print_adjustment_values()
 
 game_time()

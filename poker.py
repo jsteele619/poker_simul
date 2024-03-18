@@ -330,17 +330,24 @@ class Game_instance:
         for player in self.player_instances:
             player_info = {'Name': player.name}
             player_data.append(player_info)
-            
         df = pd.DataFrame(player_data).set_index('Name').T
         return df
     
-    def print_csv(self):
+    def append_df(self):
         player_list = []
         for player in self.player_instances:
-            #print(player.name, ": ", player.money - (200 * player.buyins))
-            player_list.append(player.money - (200 * player.buyins))
+            # print(player.name, ": ", player.money - (200 * player.buyins))
+            player_list.append(int(player.money - (200 * player.buyins)))
         return player_list
-        
+    
+    def print_adjustment_values(self):
+        for player in self.player_instances:
+            if player.name != "Hero":
+                pass
+            else:
+                print("Position Weight:", player.position_weight, "Hand Strength Weight:", player.hand_strength, "Range Weight:", player.range_weight, "Pot Odds Weight:", player.pot_odds_weight)
+                print("Preflop Val 1:", player.preflop_val_one, "Preflop Val 2:", player.preflop_val_two)
+                print("Postflop Val 1:", player.postflop_val_one, "Postflop Val 2:", player.postflop_val_two, "Postflop Val 3:", player.postflop_val_three)
 
 class AI_player(Game_instance):
     def __init__(self, name, money, game_instance):
@@ -361,23 +368,33 @@ class AI_player(Game_instance):
         self.all_in = False
         self.fold = False
 
+        # AI weights
         self.position_weight = 1
         self.hand_strength = 1
-        self.probability_strength = 1
-        self.range_weight = 1
-        self.combo_weight = 1
-        self.action_weight = 1
         self.pot_odds_weight = 1
-        self.random_val = .05
-
+        self.range_weight = 1
+        # self.probability_strength = 1
+        
+        # Weighted Decision Break points for Raise, Check, Fold 
         self.preflop_val_one = 5
         self.preflop_val_two = 3
-        self.preflop_val_three = 1
 
-        self.postflop_val_one = 5
-        self.postflop_val_two = 3
+        self.postflop_val_one = 2
+        self.postflop_val_two = 1
         self.postflop_val_three = 1
 
+        self.preflop_action = None                                      # Raise or Call
+        self.postflop_action = {"raise": 0, "call": 0, "check": 0}
+
+        #Preflop Weights
+        self.range_or_position = None
+        self.see_post_flop = False
+        
+        # Keeping track, not actual weights
+        self.average_num = 0
+        self.average_hand_strength = 0
+        self.average_position = 0
+        self.average_pot_odds = 0
 
     def game_action_player(self, action):
         # Decide what to do
@@ -391,60 +408,81 @@ class AI_player(Game_instance):
     def preflop_bet(self, action):
         range_val = self.range()
         position_index = self.position_index()
-
         what_to_do = (int(range_val) * self.range_weight) + (position_index * self.position_weight) / 2
-        print("What it do", what_to_do, "Range Val:", range_val, "Position Val:", position_index)
+
+        # Want to add pot_odds
+        if (int(range_val) * self.range_weight) >= (position_index * self.position_weight):         # Which had more weight
+            self.range_or_position = "range"
+        else:
+            self.range_or_position = "position"
+
         self.has_bet = True
+
         if what_to_do > self.preflop_val_one:
-            val = self.place_bet(4 * self.game_instance.big_blind_amount)
+            val = self.place_bet(5 * self.game_instance.big_blind_amount)
+            self.preflop_action = "raise"
             return ["raise", val]
+        
         elif what_to_do > self.preflop_val_two:
-            action = self.place_bet(action)
-            return ["call", action]
+            new_action = self.place_bet(action)
+            self.preflop_action = "call"
+            return ["call", new_action]
         else:
             self.fold = True
             self.game_instance.update_positions()
+            self.preflop_val_two -= random.uniform(0.03, 0.07)                       # Weight adjustment
             return ['fold', 0]
     
     def postflop_bet(self, action):
+        self.see_post_flop = True
         pot_odds_val = self.pot_odds(action)
         combo = Winning_hand.find_winning_hand([self.card1, self.card2, *self.game_instance.cards_public])
         position = self.position_index()
         range_val = self.range()
         self.has_bet = True
 
+        # Probability
         what_to_do = (combo[0] * self.hand_strength) * (position * self.position_weight) * (pot_odds_val * self.pot_odds_weight) * (int(range_val)/10 * self.range_weight)
-        print(what_to_do)
+
+        self.average_hand_strength += (combo[0] * self.hand_strength)
+        self.average_position += (position * self.position_weight)
+        self.average_pot_odds += (pot_odds_val * self.pot_odds_weight) 
+        self.average_num += 1
 
         if self.all_in:
             return ["all-in", 0]
-
-        if action == self.bet_this_round:       # Checked to you    
-            if what_to_do > 2:
-                val = self.place_bet(self.game_instance.get_pot() * .7 * random.uniform(0.7, 1.3))      # Strong hand bet * .7 of pot * random
+        
+        if action == self.bet_this_round:                        # Checked to you    
+            if what_to_do > self.postflop_val_one:
+                self.postflop_action["raise"] += 1
+                val = self.place_bet(self.game_instance.get_pot() * .7 * random.uniform(0.7, 1.3))      # Set Amount plus random value, high value
                 if self.all_in:
                     return ["all in", val] 
                 return ["raise", val]
-            elif what_to_do > 1:
-                val = self.place_bet(self.game_instance.get_pot() * .4 * random.uniform(0.7, 1.1))      # Medium hand bet * .4 of pot * random
+            elif what_to_do >= self.postflop_val_two:
+                self.postflop_action["raise"] += 1
+                val = self.place_bet(self.game_instance.get_pot() * .4 * random.uniform(0.7, 1.1))      # Set Amount plus random value
                 if self.all_in:
                     return ["all in", val] 
-                return ["raise, val"]
-            elif what_to_do < 1:
+                return ["raise", val]
+            elif what_to_do < self.postflop_val_two:
+                self.postflop_action["check"] += 1
                 return ["check", 0]
         
         elif action > self.bet_this_round:
-            if what_to_do > 2:
+            self.postflop_action["raise"] += 1
+            if what_to_do > self.postflop_val_one:
                 val = self.place_bet(self.game_instance.get_pot() * .7 * random.uniform(0.7, 1.3))
                 if self.all_in:
                     return ["all in", val]      
                 return ["raise", val]
-            elif what_to_do > 1:
-                val = self.place_bet(action)  
+            elif what_to_do >= self.postflop_val_two:
+                self.postflop_action["call"] += 1
+                val = self.place_bet(action)                        # call
                 if self.all_in:
                     return ["all in", val]    
                 return ["call", val]
-            elif what_to_do < 1:
+            elif what_to_do < self.postflop_val_two:
                 self.fold = True
                 return ["fold", 0]
 
@@ -468,7 +506,7 @@ class AI_player(Game_instance):
             if {self.card1[1], self.card2[1]} in hands:
                 return rank
 
-    def pot_odds23(self, action, cards):
+    def percentages(self, cards):
         pot = self.game_instance.get_pot()
         flush_prob = Probability.flush_probability(cards)
         pair_prob = Probability.two_pair_probability(cards)
@@ -518,9 +556,96 @@ class AI_player(Game_instance):
         self.bet_this_round = 0
         self.total_bet = 0
         self.has_bet = False
-        
         self.all_in = False
         self.fold = False
+        self.range_or_position = None
+        
+        if self in self.game_instance.winner:                           # If win, adjust pre-flop metrics            
+            self.adjustment_for_winner()
+        if (self.see_post_flop == True) and (self not in self.game_instance.winner):   # If loss
+            self.adjustment_for_loser()
+        
+        self.see_post_flop = False
+        self.average_num = 0
+        self.average_hand_strength = 0
+        self.average_position = 0
+        self.average_pot_odds = 0
+        self.preflop_action = None
+        
+    def adjustment_for_winner(self):
+        if self.average_num == 0:
+            return
+        
+        if self.range_or_position == "range":
+            self.range_weight += random.uniform(0.02, 0.07)
+            self.position_weight -= random.uniform(0.02, 0.07)
+        else:                  # Equals position
+            self.position_weight += random.uniform(0.02, 0.07)
+            self.range_weight -= random.uniform(0.02, 0.07)
+
+        if self.preflop_action == "raise":
+            self.preflop_val_one -= random.uniform(0.02, 0.07)
+        elif self.preflop_action == "call":
+            self.preflop_val_one += random.uniform(0.02, 0.07)
+            self.preflop_val_two -= random.uniform(0.02, 0.07)
+
+        average_hand_strength = self.average_hand_strength/ self.average_num
+        average_position = self.average_position/ self.average_num
+        average_pot_odds = self.average_pot_odds/ self.average_num
+
+        average_list = [average_hand_strength, average_position, average_pot_odds]
+        sort_list = sorted(average_list, reverse=True)
+
+        if sort_list[0] == average_hand_strength:                   # If hand strength is highest val
+            self.hand_strength += random.uniform(0.03, 0.07)
+        elif sort_list[2] ==  average_hand_strength:
+            self.hand_strength -= random.uniform(0.03, 0.07)
+
+        if sort_list[0] == average_position:                        # If position is highest val
+            self.position_weight += random.uniform(0.03, 0.07)
+        elif sort_list[2] == average_position:
+            self.position_weight -= random.uniform(0.03, 0.07)
+
+        if sort_list[0] == average_pot_odds:                        # If pot_odds is highest val
+            self.pot_odds_weight += random.uniform(0.03, 0.07)
+        elif sort_list[2] == average_pot_odds:
+            self.pot_odds_weight -= random.uniform(0.03, 0.07)
+
+    def adjustment_for_loser(self):
+        if self.range_or_position == "range":
+                self.range_weight -= random.uniform(0.02, 0.05)
+                self.position_weight += random.uniform(0.02, 0.05)
+        else: 
+            self.position_weight -= random.uniform(0.02, 0.05)
+            self.range_weight += random.uniform(0.02, 0.05)
+
+        if self.preflop_action == "raise":
+            self.preflop_val_one += random.uniform(0.02, 0.07)
+        elif self.preflop_action == "call":
+            self.preflop_val_one -= random.uniform(0.02, 0.07)
+            self.preflop_val_two += random.uniform(0.02, 0.07)
+        
+        average_hand_strength = self.average_hand_strength/ self.average_num
+        average_position = self.average_position/ self.average_num
+        average_pot_odds = self.average_pot_odds/ self.average_num
+
+        average_list = [average_hand_strength, average_position, average_pot_odds]
+        sort_list = sorted(average_list, reverse=True)
+
+        if sort_list[0] == average_hand_strength:                   # If hand strength is highest val
+            self.hand_strength -= random.uniform(0.03, 0.07)
+        elif sort_list[2] ==  average_hand_strength:
+            self.hand_strength += random.uniform(0.03, 0.07)
+
+        if sort_list[0] == average_position:                        # If position is highest val
+            self.position_weight -= random.uniform(0.03, 0.07)
+        elif sort_list[2] == average_position:
+            self.position_weight += random.uniform(0.03, 0.07)
+
+        if sort_list[0] == average_pot_odds:                        # If pot_odds is highest val
+            self.pot_odds_weight -= random.uniform(0.03, 0.07)
+        elif sort_list[2] == average_pot_odds:
+            self.pot_odds_weight += random.uniform(0.03, 0.07)
 
     def create_information_per_player(self):
         player_info = []
@@ -537,13 +662,8 @@ class AI_player(Game_instance):
         
         # Postflop Aggression Frequency
         # Big Blinds won/ 100 Hands
-
-
         pass
     
-    def ai_info_self(self):
-        pass
-
 class Player_instance(Game_instance):
     def __init__(self, name, money, game_instance):
         self.game_instance = game_instance
@@ -565,12 +685,8 @@ class Player_instance(Game_instance):
 
         self.position_weight = 1
         self.hand_strength = 1
-        self.probability_strength = 1
         self.range_weight = 1
-        self.combo_weight = 1
-        self.action_weight = 1
         self.pot_odds_weight = 1
-        self.random_val = .05
 
     def game_action_player(self, action):
         # Decide what to do
@@ -626,7 +742,7 @@ class Player_instance(Game_instance):
                 val = self.place_bet(self.game_instance.get_pot() * .4 * random.uniform(0.7, 1.1))      # Medium hand bet * .4 of pot * random
                 if self.all_in:
                     return ["all in", val] 
-                return ["raise, val"]
+                return ["raise", val]
             elif what_to_do < 1:
                 return ["check", 0]
         
@@ -644,7 +760,6 @@ class Player_instance(Game_instance):
             elif what_to_do < 1:
                 self.fold = True
                 return ["fold", 0]
-
 
     def range(self):
         starting_hands = {
@@ -666,20 +781,10 @@ class Player_instance(Game_instance):
             if {self.card1[1], self.card2[1]} in hands:
                 return rank
 
-    def pot_odds23(self, action, cards):
-        pot = self.game_instance.get_pot()
-        flush_prob = Probability.flush_probability(cards)
-        pair_prob = Probability.two_pair_probability(cards)
-        triplet_prob = Probability.three_probability_given_pair(cards)
-        quad = Probability.four_probability_given_three(cards)
-        full_house = Probability.full_house_probability(cards)
-
-        #print(flush_prob, pair_prob, triplet_prob, quad, full_house)
-
     def position_index(self):
         return self.position/self.game_instance.num_players_in_round
 
-    def place_bet(self, amount):                        # Place the bet with impact on player side, process bet on game state side
+    def place_bet(self, amount):                        # Place the bet on player side, process bet on game state side
         # Reason to place bet
         if amount > self.money:
             val = self.set_money(self.money)
@@ -716,6 +821,9 @@ class Player_instance(Game_instance):
 class Winning_hand:
     @staticmethod
     def straight_flush(cards):
+        if Winning_hand.flush(cards) and Winning_hand.straight(cards):
+            x = Winning_hand.straight(cards)
+            return [8, x[1], "Straight Flush", x[3]]
         return None 
 
     @staticmethod
@@ -735,22 +843,29 @@ class Winning_hand:
 
         if flush_suit:
             card_list = [card[1] for card in cards if card[0] == flush_suit]
-            return [5, [card_list, 0], "Flush", card_list]  # Return the ranks of the cards forming the flush
+            return [5, [card_list[0], "1"], "Flush", card_list]  # Return the ranks of the cards forming the flush
 
         return None  # No flush found
 
-    @staticmethod 
+    @staticmethod
     def straight(cards):
-        # Check for consecutive ones using a sliding window
-        straight_bit_mask = 0b0000000000000
+        # Check for consecutive ranks, handling Ace-to-5 straight
         ranks = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A']
-        bitmask = 0b11111
-        for i in range(9):
+        straight_bit_mask = 0b0
+        for rank in cards:
+            straight_bit_mask |= (1 << ranks.index(rank[1]))  # Set the bit corresponding to the rank
+        straight_bit_mask |= (1 << ranks.index('A'))  # Set the bit for Ace to handle Ace-to-5 straight
+
+        # Check for straights using a sliding window
+        bitmask = 0b11111  # Five consecutive bits set to 1
+        for i in range(len(ranks) - 4):
             window = straight_bit_mask >> i  # Shift the bits to create a window of 5 bits
-            if window & bitmask == bitmask: # Found 5 consecutive ones
-                left_rank_index = i  # Index of the leftmost bit in the sequence
-                leftmost_rank = ranks[left_rank_index + 4]  # Rank corresponding to the leftmost bit
-                return [4, [leftmost_rank, 0], "Straight", []]
+            if window & bitmask == bitmask:  # Found 5 consecutive bits set to 1
+                leftmost_rank = ranks[i]  # Rank corresponding to the leftmost bit in the sequence
+                rightmost_rank = ranks[i+4] 
+                return [4, [rightmost_rank, "1"], "Straight", [ranks[i:i+5][::-1]]]  # Return the straight hand
+
+        return None  # No straight found
     
     @staticmethod
     def find_winning_hand(cards):
@@ -782,20 +897,20 @@ class Winning_hand:
             elif val == 1:
                 singles.append(key)
 
-        #straight_flush_info = self.straight_flush()
+        straight_flush_info = Winning_hand.straight_flush(cards)
         straight_info = Winning_hand.straight(cards)
-        #flush_info = Winning_hand.flush(cards)
-        #print(singles[::-1])       # String of ['A', '8', '5', '4', '2']
-        #if straight_flush_info is not None:
-        #    return straight_flush_info
-        if len(quad) == 1:  # One quad
+        flush_info = Winning_hand.flush(cards)
+
+        if straight_flush_info is not None:
+            return straight_flush_info
+        elif len(quad) == 1:  # One quad
             return [7, [str(quad[0]), '0'], "Quads", singles[::-1]]
         elif len(triplets) == 2:  # Two triplets mean Full House
             return [6, [str(max(triplets)), str(min(triplets))], "Full House", [0,0,0]]
         elif len(triplets) == 1 and len(pairs) > 0:  # One triplet and some pairs make Full House
             return [6, [str(triplets[0]), str(max(pairs))], "Full House", [0,0,0]]
-        #elif flush_info is not None:
-        #    return flush_info
+        elif flush_info is not None:
+            return flush_info
         elif straight_info is not None:
             return straight_info
         elif len(triplets) == 1:  # Only one triplet means Three of a Kind
